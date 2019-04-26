@@ -25,9 +25,10 @@ var random(var min, var max) {
 int rows = 0;
 int columns = 0;
 bool runningLoop = true;
-std::mutex mtx1;
+std::mutex mtx;
 std::mutex mtx2;
 std::condition_variable cv;
+std::condition_variable cv2;
 bool isBallHit = false;
 
 class Ball
@@ -158,65 +159,113 @@ public:
 		this->isBallMoving = isBallMoving;
 	}
 
-	void BallCollisionWithWall()
+	void SetBallVelocity(int velocity)
 	{
-		while(runningLoop && isBallMoving)
-		{
+		this->velocity = velocity;
+	}
+
+	void BallCollision()
+	{
+		//while(runningLoop && isBallMoving)
+		//{
 			// lustrzane odbicia kulek
 			if(GetXPosition() == 0 || GetXPosition() == rows - 1) horizontalShift = -horizontalShift;
 			if(GetYPosition() == 0 || GetYPosition() == columns - 1) verticalShift = -verticalShift;
 			DisplaceBall();
-			std::this_thread::sleep_for(std::chrono::milliseconds(velocity));
-		}
+			//std::this_thread::sleep_for(std::chrono::milliseconds(velocity));
+		//}
 	}
-
-
 
 	std::thread MotionThread()
 	{
-		return std::thread(&Ball::BallCollisionWithWall, this);
+		return std::thread(&Ball::BallCollision, this);
 	}
 };
 
 std::vector<Ball*> balls;
 std::vector<std::thread> threadsOfBalls;
 
-void CreateBall()
+bool ShouldBallStop()
 {
-	while(runningLoop)
-	{
-		getmaxyx(stdscr, rows, columns);
-		balls.push_back(new Ball(rows / 2, columns / 2));
-		threadsOfBalls.push_back(balls.back()->MotionThread());
-		std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-	}
+	return !isBallHit && runningLoop;
 }
 
 int GetAbsoluteXLength(int i, int j)
 {
-	return sqrt((balls[i].GetXPosition() - balls[j].GetXPosition()) * (balls[i].GetXPosition() - balls[j].GetXPosition()));
+	return sqrt((balls[i]->GetXPosition() - balls[j]->GetXPosition()) * (balls[i]->GetXPosition() - balls[j]->GetXPosition()));
 }
 
 int GetAbsoluteYLength(int i, int j)
 {
-	return sqrt((balls[i].GetYPosition() - balls[j].GetYPosition()) * (balls[i].GetYPosition() - balls[j].GetYPosition()));
+	return sqrt((balls[i]->GetYPosition() - balls[j]->GetYPosition()) * (balls[i]->GetYPosition() - balls[j]->GetYPosition()));
 }
 
-// dwie powyższe metody potrzebne do wyznaczenia odległości między kulkami
-
-// jeśli dwie kulki znajdą się w odległości równej 1 (stykają się) to wyznacz wypadkowe przesunięcie
-// i wypadkowy wektor prędkości kulki
-void CheckNeighborhood(int counter)
+bool BallInMutex(int nrOfBall)
 {
+	int xCoord = balls[nrOfBall]->GetXPosition();
+	int yCoord = balls[nrOfBall]->GetYPosition();
 
-	// nie mam pomysłu...
-	bool activeBall = true;
-	while(runningLoop && activeBall)
+	for (int i = 0; i < balls.size(); ++i)
 	{
-		for(int j = 0; j < balls.size(); j++)
+		if((balls[i]->GetXPosition() - xCoord == 0) && (balls[i]->GetYPosition() - yCoord == 0) && i != nrOfBall)
 		{
-			if(GetAbsoluteXLength(i, j) && GetAbsoluteYLength(i, j))
+			return true;
 		}
+	}
+	return false;
+}
+
+void BallThreadFunction(int nrOfBall)
+{
+	bool ballLeavingMutex = false;
+	int delay = 0;
+
+	while(runningLoop)
+	{
+		balls[nrOfBall]->BallCollision();
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+		if(BallInMutex(nrOfBall))
+		{
+			/*if(ballLeavingMutex) continue;
+			if(delay < 1)
+			{
+				delay++;
+				continue;
+			}
+*/
+			std::unique_lock<std::mutex> lock2(mtx2);
+			isBallHit = true;
+			while(runningLoop)
+			{
+				cv2.wait(lock2);
+			}
+			mtx2.unlock();
+
+			std::unique_lock<std::mutex> lock1(mtx);
+
+			while(!isBallHit && runningLoop)
+			{
+				cv.wait(lock1);
+			}
+			isBallHit = false;
+			lock1.unlock();
+		}
+		else delay = 0;
+	}
+}
+
+void CreateBall()
+{
+	int i = 0;
+	while(runningLoop)
+	{
+		getmaxyx(stdscr, rows, columns);
+		balls.push_back(new Ball(rows / 2, columns / 2));
+		//threadsOfBalls.push_back(balls.back()->MotionThread());
+		threadsOfBalls.push_back(std::thread(BallThreadFunction, i));
+		i++;
+		std::this_thread::sleep_for(std::chrono::milliseconds(2000));
 	}
 }
 
@@ -235,10 +284,11 @@ void PressKeyToEnd()
 	{
 		cbreak();
 		noecho();
-		// kurłaaaa nie wolno getchar()!
 		char key = getch();
 		if (key == 'q') runningLoop = false;
 		else std::this_thread::sleep_for(std::chrono::milliseconds(20));
+		cv.notify_all();
+		cv2.notify_all();
 	}
 }
 
