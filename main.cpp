@@ -25,9 +25,10 @@ var random(var min, var max) {
 int rows = 0;
 int columns = 0;
 bool runningLoop = true;
-std::mutex mtx;
+std::mutex mtx1;
 std::mutex mtx2;
-std::condition_variable cv;
+std::mutex mtx3;
+std::condition_variable cv1;
 std::condition_variable cv2;
 bool isBallHit = false;
 
@@ -41,7 +42,6 @@ class Ball
 	int xSpeed;
 	int ySpeed;
 	int velocity;
-	bool isBallMoving;
 
 public:
 
@@ -51,7 +51,6 @@ public:
 		verticalShift = 1;
 		this->xPosition = xPosition;
 		this->yPosition = yPosition;
-		SetBallMoving(true);
 		InitializeDirection(random(1, 8));
 		InitializeSpeed(random(10, 300));
 	}
@@ -90,6 +89,16 @@ public:
 		return yPosition;
 	}
 
+	void SetXPosition(int xPosition)
+	{
+		this->xPosition = xPosition;
+	}
+
+	void SetYPosition(int yPosition)
+	{
+		this->yPosition = yPosition;
+	}
+
 	int GetHorizontalShift()
 	{
 		return horizontalShift;
@@ -98,6 +107,16 @@ public:
 	int GetVerticalShift()
 	{
 		return verticalShift;
+	}
+
+	void SetHorizontalShift(int horizontalShift)
+	{
+		this->horizontalShift = horizontalShift;
+	}
+
+	void SetVerticalShift(int verticalShift)
+	{
+		this->verticalShift = verticalShift;
 	}
 
 	void MoveRight()
@@ -154,51 +173,22 @@ public:
 		yPosition += verticalShift;
 	}
 
-	void SetBallMoving(bool isBallMoving)
-	{
-		this->isBallMoving = isBallMoving;
-	}
-
 	void SetBallVelocity(int velocity)
 	{
 		this->velocity = velocity;
 	}
 
-	void BallCollision()
+	void BallCollisionWithWall()
 	{
-		//while(runningLoop && isBallMoving)
-		//{
-			// lustrzane odbicia kulek
-			if(GetXPosition() == 0 || GetXPosition() == rows - 1) horizontalShift = -horizontalShift;
-			if(GetYPosition() == 0 || GetYPosition() == columns - 1) verticalShift = -verticalShift;
-			DisplaceBall();
-			//std::this_thread::sleep_for(std::chrono::milliseconds(velocity));
-		//}
-	}
-
-	std::thread MotionThread()
-	{
-		return std::thread(&Ball::BallCollision, this);
+		// lustrzane odbicia kulek
+		if(GetXPosition() == 0 || GetXPosition() == rows - 1) horizontalShift = -horizontalShift;
+		if(GetYPosition() == 0 || GetYPosition() == columns - 1) verticalShift = -verticalShift;
+		DisplaceBall();
 	}
 };
 
 std::vector<Ball*> balls;
 std::vector<std::thread> threadsOfBalls;
-
-bool ShouldBallStop()
-{
-	return !isBallHit && runningLoop;
-}
-
-int GetAbsoluteXLength(int i, int j)
-{
-	return sqrt((balls[i]->GetXPosition() - balls[j]->GetXPosition()) * (balls[i]->GetXPosition() - balls[j]->GetXPosition()));
-}
-
-int GetAbsoluteYLength(int i, int j)
-{
-	return sqrt((balls[i]->GetYPosition() - balls[j]->GetYPosition()) * (balls[i]->GetYPosition() - balls[j]->GetYPosition()));
-}
 
 bool BallInMutex(int nrOfBall)
 {
@@ -215,26 +205,66 @@ bool BallInMutex(int nrOfBall)
 	return false;
 }
 
+int GetIndexOfSecondBall(int nrOfBall)
+{
+	int xCoord = balls[nrOfBall]->GetXPosition();
+	int yCoord = balls[nrOfBall]->GetYPosition();
+
+	for (int i = 0; i < balls.size(); ++i)
+	{
+		if((balls[i]->GetXPosition() - xCoord == 0) && (balls[i]->GetYPosition() - yCoord == 0) && i != nrOfBall)
+		{
+			return i;
+		}
+	}
+	return -1;
+}
+
+int GetResultantHorizontalShift(int i, int j)
+{
+	int firstHorizontalShift = balls[i]->GetHorizontalShift();
+	int secondHorizontalShift = balls[j]->GetHorizontalShift();
+	
+	if(firstHorizontalShift == secondHorizontalShift) return firstHorizontalShift;
+	if(firstHorizontalShift > secondHorizontalShift) return firstHorizontalShift;
+	else return secondHorizontalShift;
+}
+
+int GetResultantVerticalShift(int i, int j)
+{
+	int firstVerticalShift = balls[i]->GetVerticalShift();
+	int secondVerticalShift = balls[j]->GetVerticalShift();
+
+	if(firstVerticalShift == secondVerticalShift) return firstVerticalShift;
+	if(firstVerticalShift > secondVerticalShift) return firstVerticalShift;
+	else return secondVerticalShift;
+}
+
 void BallThreadFunction(int nrOfBall)
 {
 	bool ballLeavingMutex = false;
-	int delay = 0;
+	int indexOfSecondBall;
+	int resultantVerticalShift;
+	int resultantHorizontalShift;
 
 	while(runningLoop)
 	{
-		balls[nrOfBall]->BallCollision();
+		balls[nrOfBall]->BallCollisionWithWall();
 		std::this_thread::sleep_for(std::chrono::milliseconds(100));
 
 		if(BallInMutex(nrOfBall))
 		{
-			/*if(ballLeavingMutex) continue;
-			if(delay < 1)
-			{
-				delay++;
-				continue;
-			}
-*/
 			std::unique_lock<std::mutex> lock2(mtx2);
+			indexOfSecondBall = GetIndexOfSecondBall(nrOfBall);
+
+			resultantVerticalShift = GetResultantVerticalShift(nrOfBall, indexOfSecondBall);
+			resultantHorizontalShift = GetResultantHorizontalShift(nrOfBall, indexOfSecondBall);
+			balls[indexOfSecondBall]->SetVerticalShift(resultantVerticalShift);
+			balls[indexOfSecondBall]->SetHorizontalShift(resultantHorizontalShift);
+
+			balls[nrOfBall]->SetXPosition(1000);
+			balls[nrOfBall]->SetYPosition(1000);
+
 			isBallHit = true;
 			while(runningLoop)
 			{
@@ -242,27 +272,25 @@ void BallThreadFunction(int nrOfBall)
 			}
 			mtx2.unlock();
 
-			std::unique_lock<std::mutex> lock1(mtx);
+			std::unique_lock<std::mutex> lock1(mtx1);
 
 			while(!isBallHit && runningLoop)
 			{
-				cv.wait(lock1);
+				cv1.wait(lock1);
 			}
 			isBallHit = false;
 			lock1.unlock();
 		}
-		else delay = 0;
 	}
 }
 
 void CreateBall()
 {
 	int i = 0;
-	while(runningLoop)
+	while(i < 10)
 	{
 		getmaxyx(stdscr, rows, columns);
 		balls.push_back(new Ball(rows / 2, columns / 2));
-		//threadsOfBalls.push_back(balls.back()->MotionThread());
 		threadsOfBalls.push_back(std::thread(BallThreadFunction, i));
 		i++;
 		std::this_thread::sleep_for(std::chrono::milliseconds(2000));
@@ -287,7 +315,7 @@ void PressKeyToEnd()
 		char key = getch();
 		if (key == 'q') runningLoop = false;
 		else std::this_thread::sleep_for(std::chrono::milliseconds(20));
-		cv.notify_all();
+		cv1.notify_all();
 		cv2.notify_all();
 	}
 }
