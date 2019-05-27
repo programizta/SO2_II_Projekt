@@ -7,7 +7,6 @@
 #include <memory>
 #include <condition_variable>
 #include <ncurses.h>
-#include <exception> 
 
 thread_local std::mt19937 gen{ std::random_device{}() };
 
@@ -27,7 +26,6 @@ int rows = 0;
 int columns = 0;
 bool runningLoop = true;
 std::mutex mtx;
-std::condition_variable cv;
 int indexOfSecondBall;
 int resultantVerticalShift;
 int resultantHorizontalShift;
@@ -134,10 +132,10 @@ public:
 
 	void StopTheBall()
 	{
-		this->exitThread = false;
+		this->exitThread = true;
 	}
 
-	bool CheckIfBallStopped()
+	bool CheckIfBallIsRunning()
 	{
 		return exitThread;
 	}
@@ -202,7 +200,6 @@ public:
 		if(GetXPosition() <= 0 || GetXPosition() >= rows - 1) horizontalShift = -horizontalShift;
 		if(GetYPosition() <= 0 || GetYPosition() >= columns - 1) verticalShift = -verticalShift;
 		if(velocity == 50) DisplaceBall(1.0);
-		//else if(velocity == 150) DisplaceBall(2.0);
 		else DisplaceBall(1.0);
 	}
 };
@@ -210,14 +207,14 @@ public:
 std::vector<Ball*> balls;
 std::vector<std::thread> threadsOfBalls;
 
-bool DidBallsHit(int nrOfBall)
+bool DidBallsHit(int indexOfBall)
 {
-	int xCoord = balls[nrOfBall]->GetXPosition();
-	int yCoord = balls[nrOfBall]->GetYPosition();
+	int xCoord = balls[indexOfBall]->GetXPosition();
+	int yCoord = balls[indexOfBall]->GetYPosition();
 
 	for (int i = 0; i < balls.size(); ++i)
 	{
-		if((balls[i]->GetXPosition() - xCoord == 0) && (balls[i]->GetYPosition() - yCoord == 0) && i != nrOfBall)
+		if((balls[i]->GetXPosition() - xCoord == 0) && (balls[i]->GetYPosition() - yCoord == 0) && i != indexOfBall)
 		{
 			return true;
 		}
@@ -225,15 +222,15 @@ bool DidBallsHit(int nrOfBall)
 	return false;
 }
 
-int GetIndexOfSecondBall(int nrOfBall)
+int GetIndexOfSecondBall(int indexOfBall)
 {
 	int n;
-	int xCoord = balls[nrOfBall]->GetXPosition();
-	int yCoord = balls[nrOfBall]->GetYPosition();
+	int xCoord = balls[indexOfBall]->GetXPosition();
+	int yCoord = balls[indexOfBall]->GetYPosition();
 
 	for (int i = 0; i < balls.size(); ++i)
 	{
-		if((balls[i]->GetXPosition() - xCoord == 0) && (balls[i]->GetYPosition() - yCoord == 0) && i != nrOfBall)
+		if((balls[i]->GetXPosition() - xCoord == 0) && (balls[i]->GetYPosition() - yCoord == 0) && i != indexOfBall)
 		{
 			n = i;
 			return i;
@@ -242,10 +239,10 @@ int GetIndexOfSecondBall(int nrOfBall)
 	return n;
 }
 
-int GetResultantHorizontalShift(int i, int j)
+int GetResultantHorizontalShift(int indexOfFirstBall, int indexOfSecondBall)
 {
-	int horizontalShiftOfFirstBall = balls[i]->GetHorizontalShift();
-	int horizontalShiftOfSecondBall = balls[j]->GetHorizontalShift();
+	int horizontalShiftOfFirstBall = balls[indexOfFirstBall]->GetHorizontalShift();
+	int horizontalShiftOfSecondBall = balls[indexOfSecondBall]->GetHorizontalShift();
 	
 	if(horizontalShiftOfFirstBall == horizontalShiftOfSecondBall) return horizontalShiftOfFirstBall;
 	else if((horizontalShiftOfFirstBall == 0 && horizontalShiftOfSecondBall == 1) || (horizontalShiftOfFirstBall == 1 && horizontalShiftOfSecondBall == 0))
@@ -256,13 +253,14 @@ int GetResultantHorizontalShift(int i, int j)
 	{
 		return -1;
 	}
-	else return 0;
+	//else return 0;
+	else return -1;
 }
 
-int GetResultantVerticalShift(int i, int j)
+int GetResultantVerticalShift(int indexOfFirstBall, int indexOfSecondBall)
 {
-	int verticalShiftOfFirstBall = balls[i]->GetVerticalShift();
-	int verticalShiftOfSecondBall = balls[j]->GetVerticalShift();
+	int verticalShiftOfFirstBall = balls[indexOfFirstBall]->GetVerticalShift();
+	int verticalShiftOfSecondBall = balls[indexOfSecondBall]->GetVerticalShift();
 
 	if(verticalShiftOfFirstBall == verticalShiftOfSecondBall) return verticalShiftOfFirstBall;
 	else if((verticalShiftOfFirstBall == 0 && verticalShiftOfSecondBall == 1) || (verticalShiftOfFirstBall == 1 && verticalShiftOfSecondBall == 0))
@@ -273,15 +271,16 @@ int GetResultantVerticalShift(int i, int j)
 	{
 		return -1;
 	}
-	else return 0;
+	//else return 0;
+	else return -1;
 }
 
-int GetResultantVelocity(int i, int j)
+int GetResultantVelocity(int indexOfFirstBall, int indexOfSecondBall)
 {
-	int horizontalShiftOfFirstBall = balls[i]->GetHorizontalShift();
-	int horizontalShiftOfSecondBall = balls[j]->GetHorizontalShift();
-	int verticalShiftOfFirstBall = balls[i]->GetVerticalShift();
-	int verticalShiftOfSecondBall = balls[j]->GetVerticalShift();
+	int horizontalShiftOfFirstBall = balls[indexOfFirstBall]->GetHorizontalShift();
+	int horizontalShiftOfSecondBall = balls[indexOfSecondBall]->GetHorizontalShift();
+	int verticalShiftOfFirstBall = balls[indexOfFirstBall]->GetVerticalShift();
+	int verticalShiftOfSecondBall = balls[indexOfSecondBall]->GetVerticalShift();
 
 	if(horizontalShiftOfFirstBall == horizontalShiftOfSecondBall && verticalShiftOfFirstBall == verticalShiftOfSecondBall) return 50;
 	else if(horizontalShiftOfFirstBall != horizontalShiftOfSecondBall && verticalShiftOfFirstBall == verticalShiftOfSecondBall) return 150;
@@ -289,55 +288,47 @@ int GetResultantVelocity(int i, int j)
 	else return 150;
 }
 
-void BallThreadFunction(int nrOfBall)
+void BallThreadFunction(int indexOfBall)
 {
-	int velocity;
-
-	while(runningLoop)
+	while(runningLoop && !balls[indexOfBall]->CheckIfBallIsRunning())
 	{
-		balls[nrOfBall]->BallCollisionWithWall();
+		balls[indexOfBall]->BallCollisionWithWall();
 		std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
 		std::unique_lock<std::mutex> lock(mtx);
 
-		if(DidBallsHit(nrOfBall))
+		if(DidBallsHit(indexOfBall))
 		{
-			indexOfSecondBall = GetIndexOfSecondBall(nrOfBall);
+			indexOfSecondBall = GetIndexOfSecondBall(indexOfBall);
 
-			resultantVerticalShift = GetResultantVerticalShift(nrOfBall, indexOfSecondBall);
-			resultantHorizontalShift = GetResultantHorizontalShift(nrOfBall, indexOfSecondBall);
-			velocity = GetResultantVelocity(nrOfBall, indexOfSecondBall);
-			balls[nrOfBall]->SetVelocity(velocity);
-			balls[nrOfBall]->SetVerticalShift(resultantVerticalShift);
-			balls[nrOfBall]->SetHorizontalShift(resultantHorizontalShift);
-			balls[indexOfSecondBall]->StopTheBall();
+			// atomowość operacji pobierania indeksu kulki!
+			// przeszukiwanie bez pętli (sic!)
 
-			balls[indexOfSecondBall]->SetXPosition(1000);
-			balls[indexOfSecondBall]->SetYPosition(1000);
+			resultantVerticalShift = GetResultantVerticalShift(indexOfBall, indexOfSecondBall);
+			resultantHorizontalShift = GetResultantHorizontalShift(indexOfBall, indexOfSecondBall);
+			resultantVelocity = GetResultantVelocity(indexOfBall, indexOfSecondBall);
+			balls[indexOfSecondBall]->SetVelocity(resultantVelocity);
+			balls[indexOfSecondBall]->SetVerticalShift(resultantVerticalShift);
+			balls[indexOfSecondBall]->SetHorizontalShift(resultantHorizontalShift);
 
-			/*cv.wait(lock);*/
-			
-			//std::terminate();
-			threadsOfBalls[indexOfSecondBall].join();
-			lock.unlock();
+			balls[indexOfBall]->StopTheBall();
+			balls[indexOfBall]->SetXPosition(1000);
+			balls[indexOfBall]->SetYPosition(1000);
 		}
-
-		
-
-		// zakończenie wątku, nie wait
+		lock.unlock();
 	}
 }
 
 void CreateBall()
 {
 	int i = 0;
-	while(i < 15)
+	while(runningLoop)
 	{
 		getmaxyx(stdscr, rows, columns);
 		balls.push_back(new Ball(rows / 2, columns / 2));
 		threadsOfBalls.push_back(std::thread(BallThreadFunction, i));
 		i++;
-		std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+		std::this_thread::sleep_for(std::chrono::milliseconds(10));
 	}
 }
 
@@ -345,8 +336,7 @@ void TerminateThreadsOfBalls()
 {
 	for (int i = 0; i < threadsOfBalls.size(); ++i)
 	{
-		if(balls[i]->CheckIfBallStopped() == false) continue;
-		else threadsOfBalls[i].join();
+		threadsOfBalls[i].join();
 	}
 }
 
@@ -360,7 +350,6 @@ void PressKeyToEnd()
 		char key = getch();
 		if (key == 'q') runningLoop = false;
 		else std::this_thread::sleep_for(std::chrono::milliseconds(20));
-		cv.notify_all();
 	}
 }
 
